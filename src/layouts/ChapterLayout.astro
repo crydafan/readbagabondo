@@ -46,8 +46,14 @@ const { volume, chapter, prevChapter, nextChapter } = Astro.props;
     currentPage,
     isProgrammaticScroll,
   } from "../feature/reader/store";
+  import {
+    computeSpreads,
+    spreadIndexOfPage,
+    leadingPageOfSpread,
+  } from "../feature/reader/spreads";
   const viewer = document.querySelector("[data-page-count]") as HTMLElement;
   const pageCount = Number(viewer.dataset.pageCount);
+  const spreads = computeSpreads(pageCount);
 
   let lastScrollTop = 0;
   let hideTimeout: number;
@@ -80,14 +86,37 @@ const { volume, chapter, prevChapter, nextChapter } = Astro.props;
     let pageIndex;
     let currentPageIndex = currentPage.get();
 
+    // In two-page view, step by a whole spread instead of a single page.
+    // Paired images share the same offsetTop, so a per-page step would leave
+    // every other press with no visible scroll. Branch on the live DOM class
+    // so this is correct immediately after a mid-read toggle.
+    const isDouble =
+      document.documentElement.classList.contains("double") &&
+      window.matchMedia("(min-width:768px)").matches;
+
+    let step;
     if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
       event.preventDefault();
-      pageIndex = Math.max(0, currentPageIndex - 1);
+      step = -1;
     } else if (event.key === "ArrowDown" || event.key === "ArrowRight") {
       event.preventDefault();
-      pageIndex = Math.min(pageCount - 1, currentPageIndex + 1);
+      step = 1;
     } else {
       return;
+    }
+
+    if (isDouble) {
+      const currentSpread = spreadIndexOfPage(spreads, currentPageIndex);
+      const targetSpread = Math.min(
+        spreads.length - 1,
+        Math.max(0, currentSpread + step),
+      );
+      pageIndex = leadingPageOfSpread(spreads[targetSpread]);
+    } else {
+      pageIndex = Math.min(
+        pageCount - 1,
+        Math.max(0, currentPageIndex + step),
+      );
     }
 
     if (pageIndex !== currentPageIndex) {

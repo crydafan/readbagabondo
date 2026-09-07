@@ -1,0 +1,45 @@
+---
+
+---
+
+<button
+  type="button"
+  id="directionToggle"
+  aria-label="Toggle reading direction"
+  aria-pressed="false"
+  class="hidden md:inline-flex items-center justify-center w-10 h-10 rounded-lg text-black hover:bg-gray-100 dark:text-neutral-200 dark:hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-neutral-700 transition-colors"
+>
+  <i
+    id="directionIcon"
+    class="fas fa-arrow-right-arrow-left inline text-2xl"
+    aria-hidden="true"></i>
+</button>
+
+<script>
+  const button = document.getElementById("directionToggle");
+
+  if (button) {
+    const sync = (isLtr: boolean) => {
+      // aria-pressed reflects the non-default (left-to-right) direction.
+      button.setAttribute("aria-pressed", isLtr ? "true" : "false");
+      button.setAttribute(
+        "aria-label",
+        isLtr
+          ? "Reading left-to-right (switch to right-to-left)"
+          : "Reading right-to-left (switch to left-to-right)",
+      );
+    };
+
+    sync(document.documentElement.classList.contains("ltr"));
+
+    button.addEventListener("click", () => {
+      const isLtr = document.documentElement.classList.toggle("ltr");
+
+      sync(isLtr);
+
+      try {
+        localStorage.setItem("readingDirection", isLtr ? "ltr" : "rtl");
+      } catch (e) {}
+    });
+  }
+</script>

@@ -1,9 +1,17 @@
 ---
+import { computeSpreads } from "../feature/reader/spreads";
+
 export interface Props {
   pagesUrl: string[];
 }
 
 const { pagesUrl } = Astro.props;
+
+// Group pages into spreads for the two-page view. Each <img> keeps its true
+// global page index (for data-page and the eager/lazy rule); the wrappers are
+// transparent (display:contents) in single mode, so the layout is identical to
+// a flat list until the `double` class is toggled on <html>. See spreads.ts.
+const spreads = computeSpreads(pagesUrl.length);
 ---
 
 <div
@@ -11,14 +19,18 @@ const { pagesUrl } = Astro.props;
 >
   <div class="w-full max-w-350 flex flex-col items-center">
     {
-      pagesUrl.map((pageUrl, index) => (
-        <img
-          src={pageUrl}
-          alt={`Page ${index + 1}`}
-          class="h-auto max-h-screen block mb-0.5 object-contain border border-gray-900 dark:border-neutral-700"
-          loading={index < 3 ? "eager" : "lazy"}
-          data-page={index}
-        />
+      spreads.map((group, spreadIndex) => (
+        <div class="spread" data-spread data-spread-index={spreadIndex}>
+          {group.map((pageIndex) => (
+            <img
+              src={pagesUrl[pageIndex]}
+              alt={`Page ${pageIndex + 1}`}
+              class="h-auto max-h-screen block mb-0.5 object-contain border border-gray-900 dark:border-neutral-700"
+              loading={pageIndex < 3 ? "eager" : "lazy"}
+              data-page={pageIndex}
+            />
+          ))}
+        </div>
       ))
     }
   </div>
