@@ -111,6 +111,8 @@ const { volume, chapter, prevChapter, nextChapter } = Astro.props;
       return;
     }
 
+    if (pageCount === 0) return;
+
     if (isDouble) {
       const currentSpread = spreadIndexOfPage(spreads, currentPageIndex);
       const targetSpread = Math.min(
