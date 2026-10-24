@@ -1,0 +1,39 @@
+---
+
+---
+
+<button
+  type="button"
+  id="viewToggle"
+  aria-label="Toggle two-page view"
+  aria-pressed="false"
+  class="hidden md:inline-flex items-center justify-center w-10 h-10 rounded-lg text-black hover:bg-gray-100 dark:text-neutral-200 dark:hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-neutral-700 transition-colors"
+>
+  <i id="viewIcon" class="fas fa-file inline text-2xl" aria-hidden="true"></i>
+</button>
+
+<script>
+  const button = document.getElementById("viewToggle");
+  const icon = document.getElementById("viewIcon");
+
+  if (button && icon) {
+    const sync = (isDouble: boolean) => {
+      icon.className = isDouble
+        ? "fas fa-book-open inline text-2xl"
+        : "fas fa-file inline text-2xl";
+      button.setAttribute("aria-pressed", isDouble ? "true" : "false");
+    };
+
+    sync(document.documentElement.classList.contains("double"));
+
+    button.addEventListener("click", () => {
+      const isDouble = document.documentElement.classList.toggle("double");
+
+      sync(isDouble);
+
+      try {
+        localStorage.setItem("viewMode", isDouble ? "double" : "single");
+      } catch (e) {}
+    });
+  }
+</script>

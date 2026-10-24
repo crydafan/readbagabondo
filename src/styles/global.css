@@ -6,6 +6,39 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Two-page (spread) view — opt-in, desktop only.
+   Single mode: the wrapper is transparent to layout, so images cascade
+   exactly as a flat list (identical to the original single-page reader). */
+.spread {
+  display: contents;
+}
+
+/* The reading-direction toggle only matters in double mode. */
+html:not(.double) #directionToggle {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  html.double .spread {
+    display: flex;
+    flex-direction: row-reverse; /* RTL default: earlier page on the RIGHT */
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.125rem;
+    margin-bottom: 0.125rem;
+    width: 100%;
+  }
+
+  html.double.ltr .spread {
+    flex-direction: row; /* LTR: earlier page on the left */
+  }
+
+  html.double .spread > img {
+    max-width: 50%;
+    margin-bottom: 0;
+  }
+}
+
 .animate-gradient {
   background: linear-gradient(
     270deg,

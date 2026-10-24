@@ -2,6 +2,8 @@
 import "../styles/global.css";
 import ArrowIcon from "./ArrowIcon.astro";
 import ThemeToggle from "./ThemeToggle.astro";
+import ViewToggle from "./ViewToggle.astro";
+import DirectionToggle from "./DirectionToggle.astro";
 
 export interface Props {
   volume: number;
@@ -95,6 +97,8 @@ const { volume, chapter, prevChapter, nextChapter } = Astro.props;
           </button>
         )
       }
+      <DirectionToggle />
+      <ViewToggle />
       <ThemeToggle />
     </div>
   </div>

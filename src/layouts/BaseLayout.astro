@@ -49,6 +49,19 @@ const title = tagline
         if (meta) meta.setAttribute("content", isDark ? "#000000" : "#ffffff");
       } catch (e) {}
     </script>
+    <script is:inline>
+      // Apply the reader view-mode preferences before first paint to avoid a
+      // single->double layout flash (mirrors the theme script above).
+      try {
+        if (
+          localStorage.getItem("viewMode") === "double" &&
+          window.matchMedia("(min-width:768px)").matches
+        )
+          document.documentElement.classList.add("double");
+        if (localStorage.getItem("readingDirection") === "ltr")
+          document.documentElement.classList.add("ltr");
+      } catch (e) {}
+    </script>
     <slot name="head" />
     <script
       is:inline
