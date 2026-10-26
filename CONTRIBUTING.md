@@ -4,7 +4,7 @@ Thank you for your interest in contributing to readbagabondo! We welcome all con
 
 ## Project Overview
 
-readbagabondo is a manga reader web application for Takehiko Inoue's masterpiece Vagabond. Built with Astro and deployed on Cloudflare Workers, it provides a minimalist, high-quality reading experience using D1 database for metadata and R2 for image storage.
+readbagabondo is a manga reader web application for Takehiko Inoue's masterpiece Vagabond. Built with Astro as a fully static site, it provides a minimalist, high-quality reading experience: metadata comes from a local SQLite database read at build time, and manga images are served from a CDN. A small, separate Cloudflare Worker (`mihon/`) exposes a read-only API for the Mihon/Keiyoushi extension.
 
 This software is licensed under the MIT License, but this license does NOT grant any rights to manga content. Vagabond © Takehiko Inoue / Kodansha. This site is unofficial and provides content for personal reference only. All rights remain with the original creators and publishers.
 
@@ -15,45 +15,30 @@ This software is licensed under the MIT License, but this license does NOT grant
 We're actively working on these high-impact features:
 
 1. **Single Page Reader (Alternative Reading Mode)**
-   - Implement single-page horizontal navigation as an alternative to current cascade layout
    - Canvas-based rendering with smooth page flip transitions
    - Thumbnail navigation sidebar/bottom panel
    - Reading progress indicator adapted for single-page navigation
-   - RTL mode: mirrored navigation controls, reversed keyboard shortcuts (← becomes next, → becomes previous)
    - Mobile gesture support implementation
    - Page preloading for smooth transitions
 
-2. **Dark Mode Implementation**
-   - Theme system with manual toggle
-   - Integration with Tailwind/Flowbite patterns
-   - Theme persistence via localStorage
-   - No automatic dark mode based on system preference
-
-3. **Comment Sections (per Chapter & Volume)**
-   - Database schema design for chapter/volume comments
-   - API routes for comment CRUD operations
-   - UI components using existing Tailwind/Flowbite patterns
-   - Reading progress tracking per chapter
-
-4. **Chapter Selection UI Improvements**
-   - Manual chapter navigation within reader interface (currently requires going back to volume page)
+2. **Chapter Selection UI Improvements**
+   - Manual chapter jump within the reader interface (navigation is currently sequential prev/next only)
    - Integration with volume/chapter data structure
    - Reading progress display for each chapter
 
-### Mihon API Modernization
+### Mihon API
 
-- **Current Status**: Mihon API v1 is in production and will be deprecated
-- **Next Phase**: Mihon API v2 is in design/thinking phase (not yet implemented)
-- **Breaking Changes**: v2 will introduce breaking changes; Keiyoushi extension will need updates
+- **Status**: the Worker in `mihon/` was already rewritten from the ground up. Its routes live under `/api/mihon` and there is no versioned (v1/v2) endpoint — changes are made in place
+- **Breaking Changes**: document contract changes in the PR and notify the Keiyoushi extension maintainers
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+ (Astro 6 requirement)
 - pnpm package manager
 - Git
-- Cloudflare account (for deploying to production, optional for local development)
+- Cloudflare account (optional — only needed to deploy the `mihon/` Worker)
 
 ### Setup for Contributors
 
@@ -61,13 +46,14 @@ We're actively working on these high-impact features:
 # 1. Fork the repository on GitHub
 # 2. Clone your fork
 git clone <your-fork-url>
-cd read-vagabond
+cd readbagabondo
 
 # 3. Install dependencies
 pnpm install
 
-# 4. Set up local SQLite database (packages/db/local.db is committed and ready)
-# If regenerating from seeds:
+# 4. Configure and generate the local SQLite database
+cp .env.example .env   # sets DATABASE_URL
+pnpm db:migrate        # creates packages/db/local.db and applies migrations
 sqlite3 packages/db/local.db < packages/db/seeds/0000_seed_vagabond_metadata.sql
 
 # 5. Create a feature branch from main
@@ -88,7 +74,7 @@ pnpm dev               # Local development server for the static reader
 The application reader is a fully static site (SSG) that reads metadata from a local SQLite database (`packages/db/local.db`) via Drizzle ORM and `@libsql/client`:
 
 - **Database Package**: `@readbagabondo/db` in `packages/db/`
-- **Database File**: `packages/db/local.db` (committed for reproducible builds)
+- **Database File**: `packages/db/local.db` (git-ignored; generate it with `pnpm db:migrate` plus the seed script)
 - **Migrations**: `packages/db/drizzle/migrations/`
 - **Seeds**: `packages/db/seeds/`
 
@@ -113,25 +99,24 @@ pnpm build             # Build static site to dist/
 pnpm preview           # Preview production build locally
 ```
 
-### Cloudflare Authentication (Optional)
+### Mihon Worker Setup (Optional)
 
-- **For Local Development**: No Cloudflare account required - wrangler works locally
-- **For Deployment**: Cloudflare account needed for `git push` to main branch (auto-deploys)
-- **For Remote Database Testing**: Cloudflare account needed for `wrangler d1 execute --remote`
-
-**Login to Cloudflare (when needed)**:
+The reader needs no Cloudflare account. Only the `mihon/` Worker does:
 
 ```bash
-pnpm wrangler login     # Login to Cloudflare account
-pnpm wrangler whoami    # Verify authentication
+cd mihon
+pnpm dev            # wrangler dev — local Worker with D1 emulation
+pnpm deploy         # wrangler deploy --minify
 ```
+
+Authenticate first with `pnpm wrangler login` from inside `mihon/` (that is where `wrangler` is installed), then verify with `pnpm wrangler whoami`.
 
 ## Feature-Specific Implementation Guidelines
 
 ### Single Page Reader Implementation
 
-**Current State**: Vertical cascade layout with continuous scrolling (default reader)
-**Target State**: Single page horizontal navigation as optional alternative mode with LTR/RTL support
+**Current State**: Vertical cascade layout with continuous scrolling (default), plus an opt-in two-page spread view for desktop with an LTR/RTL toggle
+**Target State**: Single page horizontal navigation as optional alternative mode
 
 **Technical Requirements**:
 
@@ -139,34 +124,18 @@ pnpm wrangler whoami    # Verify authentication
 - Implement page flip transitions between pages
 - Add thumbnail navigation panel (sidebar or bottom)
 - Show reading progress for single-page navigation
-- RTL Mode: Mirror navigation controls, reverse keyboard shortcuts
 - Mobile: Implement swipe gestures for page navigation
 - Performance: Preload next/previous pages for smooth transitions
 
 **Files to Modify**:
 
 - `src/pages/volume-[volume]/chapter-[chapter]/index.astro` (main reading interface)
-- `src/feature/reading/` (add reading direction context)
-- `src/styles/global.css` (add canvas and transition styles)
+- `src/feature/reader/` (reader state, spread pairing, direction/view-mode preferences)
+- `src/styles/global.css` (spread layout and transition styles)
 
-### Dark Mode Implementation
+### Reader View Options
 
-**Current State**: Light theme only, no theme system
-**Target State**: Manual dark mode toggle with persistence
-
-**Technical Requirements**:
-
-- Create theme context/store for state management
-- Add dark mode classes to Tailwind configuration
-- Implement theme toggle UI component
-- Store theme preference in localStorage
-- Update all page templates to use theme classes
-
-**Files to Modify**:
-
-- `src/feature/theme/` (add theme context)
-- `src/styles/global.css` (dark mode CSS variables)
-- All page templates (add theme class bindings)
+Three reader preferences already ship and are persisted in `localStorage`: theme (`ThemeToggle.astro`, `dark` class), view mode (`ViewToggle.astro`, `double` class) and reading direction (`DirectionToggle.astro`, `ltr` class). `src/styles/global.css` holds the spread layout rules, and `BaseLayout.astro` applies the stored preferences before first paint. Extend these instead of adding a parallel preference system.
 
 ### Comment System Implementation
 
@@ -182,7 +151,7 @@ pnpm wrangler whoami    # Verify authentication
 
 **Files to Create/Modify**:
 
-- `migrations/` (add comment database schema)
+- `packages/db/drizzle/migrations/` (add comment tables via `pnpm db:generate`)
 - `src/feature/comments/` (add comment functions)
 - Page templates (add comment components)
 
@@ -201,19 +170,17 @@ pnpm wrangler whoami    # Verify authentication
 
 - `src/pages/volume-[volume]/chapter-[chapter]/index.astro` (add chapter selector)
 
-### Mihon API v2 Development
+### Mihon API Changes
 
-**Current State**: Mihon API v1 with hardcoded values and workarounds
-**Target State**: Redesigned API supporting multiple works and localization
+**Current State**: `mihon/` is the rewritten Worker (Hono, D1 through `@readbagabondo/db`, base path `/api/mihon`, `q`/`page` support on `/mangas`). There is no planned v2 endpoint — the API evolves in place.
 
-**Technical Requirements**:
+**Guidelines**:
 
-- Remove hardcoded values and workarounds
-- Design flexible API structure for multiple manga works
-- Support for multi-language/localization
-- Integration with manga reader applications
+- Keep the unversioned `/api/mihon` path; do not add a version segment
+- Preserve the response shape the Keiyoushi extension consumes, or document the break and notify its maintainers
+- Keep queries in `@readbagabondo/db` so the Worker and the static reader share them
 
-**Note**: v2 is currently in design/thinking phase. Once specification is complete, API will be refactored as a short-lived feature branch merged to `main`.
+**Note**: extend `mihon/src/index.ts` directly on a short-lived branch merged to `main`; there is no long-lived API branch.
 
 ## Branch Strategy & Submission Process
 
@@ -221,7 +188,7 @@ pnpm wrangler whoami    # Verify authentication
 
 This project uses **trunk-based development** with `main` as the primary development branch:
 
-- `main`: Primary development trunk (auto-deploys to production on merge)
+- `main`: Primary development trunk (deployment is manual and outside this repo)
 - Feature branches: Short-lived, created from and merged directly to `main`
 - No long-lived development branches
 
@@ -230,14 +197,13 @@ This project uses **trunk-based development** with `main` as the primary develop
 - `main`: Production trunk (all development happens here)
 - `feat/*`: Feature branches (short-lived)
 - `fix/*`: Bug fix branches (short-lived)
-- `mihon-api-v2/*`: API v2 feature branches (short-lived)
 - `docs/*`: Documentation update branches
 
 ### Branch Naming Conventions
 
 - Features: `feat/single-page-reader`, `feat/dark-mode`, `feat/comment-system`
-- **Breaking API changes**: Follow breaking changes policy (see above)
-- **Version API endpoints**: Use `/api/v1/`, `/api/v2/` for breaking changes
+- API work: `feat/mihon-pagination`, `fix/mihon-chapter-order` (the Worker is unversioned under `/api/mihon`; ship changes in place and notify Keiyoushi maintainers of breaks)
+- **Breaking API changes**: document them in the PR description (see [Mihon API Changes](#mihon-api-changes))
 
 ### Hotfixes & Bug Resolution
 
@@ -254,14 +220,14 @@ This project uses **trunk-based development** with `main` as the primary develop
 2. **Fix the issue** with minimal changes
 3. **Open PR targeting `main`** with `[HOTFIX]` prefix in title
 4. **Fast-track review** by maintainer
-5. **Merge and auto-deploy** to production
+5. **Merge, then deploy** (deployment is manual)
 
-**Forward-fix strategy**: We fix forward, not rollback. Cloudflare deployments are fast enough to patch issues quickly.
+**Forward-fix strategy**: We fix forward, not rollback. Publishing the static build is fast enough to patch issues quickly.
 
-**For critical production outages**: Maintainer may manually rollback via Cloudflare dashboard while hotfix is prepared.
+**For critical production outages**: A maintainer may re-publish the previous `dist/` build while the hotfix is prepared.
 
 - Bug fixes: `fix/reading-progress`, `fix/navigation-issue`, `fix/cache-headers`
-- API work: `mihon-api-v2/endpoints`, `mihon-api-v2/schema`, `mihon-api-v2/localization`
+- API work: `feat/mihon-pagination`, `fix/mihon-chapter-order`
 - Documentation: `docs/update-contributing`, `docs/api-migration-guide`
 
 ### Pull Request Workflow
@@ -280,10 +246,10 @@ This project uses **trunk-based development** with `main` as the primary develop
 5. **Push to your fork**: `git push origin feat/your-feature-name`
 6. **Open pull request targeting `main` branch**
 7. **CodeRabbit automatically reviews your PR**
-8. **Cloudflare builds check passes**
+8. **`pnpm build` check passes**
 9. **Address review feedback**
-10. **Maintainer approves PR** (after CodeRabbit review + passing Cloudflare build)
-11. **Merge to `main`** → automatic production deployment
+10. **Maintainer approves PR** (after CodeRabbit review + passing build)
+11. **Merge to `main`**
 
 ### Testing Your PR
 
@@ -291,8 +257,8 @@ This project uses **trunk-based development** with `main` as the primary develop
 
 ```bash
 pnpm dev                      # Test locally with Astro dev server
-pnpm wrangler dev             # Test with Cloudflare Workers runtime
 pnpm build && pnpm preview    # Test production build locally
+cd mihon && pnpm dev          # Test the mihon Worker (wrangler dev)
 ```
 
 **Testing Others' PRs** (for reviewers and contributors):
@@ -315,7 +281,7 @@ pnpm dev
 Before a PR can be merged to `main`:
 
 1. **CodeRabbit review passed** (automated)
-2. **Cloudflare build successful** (automated)
+2. **`pnpm build` succeeds** (automated check)
 3. **Maintainer approval** (manual)
 4. **No merge conflicts with main**
 
@@ -324,7 +290,7 @@ Before a PR can be merged to `main`:
 ### Merge Strategy
 
 - **All work merges directly to `main`**
-- **Every merge to `main` = production deployment** (automatic via Cloudflare)
+- **Deployment is manual and lives outside this repo**; merging to `main` does not publish the site
 - **Short-lived feature branches** - merge within days, not weeks
 - **Small, incremental PRs preferred** over large, long-lived branches
 
@@ -334,26 +300,25 @@ Before a PR can be merged to `main`:
 
 - Follow detailed guidelines in [AGENTS.md](./AGENTS.md)
 - Use TypeScript strict mode
-- Follow Astro SSR patterns
+- Follow Astro static-site patterns: pages that take dynamic params export `getStaticPaths`
 - Implement proper error handling and validation
 - Use Tailwind utility classes, Flowbite components
 - Mobile-first responsive design approach
 
 ### Database Operations
 
-- Use D1 database with proper connection handling
-- Always validate database exists before use
-- Use prepared statements with parameter binding
-- Return `null` for not-found results
-- Use TypeScript generics for query result typing
+- Add new queries to `packages/db/src/queries.ts` and import them from `@readbagabondo/db`
+- Use Drizzle's query builder (parameterized under the hood); never string-concatenate SQL
+- Lookups return a single row or `undefined`; handle the empty case in the caller
+- Prefer types inferred from the schema in `packages/db/src/schema.ts`
+- The reader uses the local libsql client; the mihon Worker passes its D1 binding to `createDb`
 
 ### API Development
 
-- Export typed functions: `GET`, `POST`, etc. of type `APIRoute`
-- Return proper HTTP status codes
-- Set appropriate `Content-Type` headers
-- Include cache headers for static content
-- Use JSON error responses with descriptive messages
+- In the reader, API routes are build-time files such as `src/pages/sitemap.xml.ts` exporting a `GET` of type `APIRoute`
+- In the `mihon/` Worker, add handlers to the Hono app in `mihon/src/index.ts` (mounted under `/api/mihon`)
+- Return proper HTTP status codes and descriptive error messages
+- Validate `c.req.param()` / `c.req.query()` values before querying
 
 ### Security Best Practices
 
@@ -416,7 +381,7 @@ PR titles follow the same format as commit messages for consistency.
 
 - `feat: add LTR/RTL reading direction support`
 - `fix: resolve chapter count calculation error`
-- `docs: update Mihon API v2 documentation`
+- `docs: document the Mihon API query params`
 - `refactor: extract common page layout components`
 - `perf: improve image caching strategy`
 
@@ -520,29 +485,27 @@ Closes #92
 ```markdown
 ## Problem/Motivation
 
-Mihon API v1 has hardcoded values that prevent multi-language support and future expansion.
+`GET /api/mihon/mangas` returned every manga in one response, so the Keiyoushi extension had no way to page through the catalogue.
 
 ## Implementation
 
-- Refactored API structure to support dynamic manga data
-- Added language parameter support
-- Implemented new endpoint for manga metadata
-- Updated response format for compatibility
+- Added a `page` query param with a fixed page size of 20
+- Added a `q` query param to filter by title
+- Reused the existing query helper from `@readbagabondo/db`
 
 ## Testing
 
-- Tested with existing Mihon client applications
-- Verified backward compatibility
-- Checked new language parameter functionality
-- Validated response format matches expected schema
+- Queried `/api/mihon/mangas?q=vagabond&page=1` locally with `pnpm dev`
+- Verified the extension still parses the response
+- Confirmed an unmatched filter returns `[]`
 
 ## Breaking Changes
 
-API response format updated (backward compatible)
+None — both query params are optional
 
 ## Related Issues
 
-Related to #45, Part of Mihon API v2 roadmap
+Closes #<issue-number>
 ```
 
 ## Testing Approach
@@ -550,9 +513,9 @@ Related to #45, Part of Mihon API v2 roadmap
 Currently, this project uses manual testing rather than automated tests:
 
 1. **Local Testing**: Run `pnpm dev` and test all user flows
-2. **API Testing**: Test API endpoints directly
+2. **API Testing**: Test the mihon endpoints directly (see `mihon/README.md`)
 3. **Responsive Testing**: Verify functionality across devices
-4. **Workers Testing**: Use `wrangler dev` for Cloudflare deployment testing
+4. **Worker Testing**: Run `pnpm dev` inside `mihon/` for the API Worker
 
 Before submitting a PR, please ensure:
 
@@ -563,18 +526,21 @@ Before submitting a PR, please ensure:
 
 ## Deployment Process
 
-### Automatic Cloudflare Deployment
+### Reader (static site)
 
-- **Trigger**: Any merge to `main` branch
-- **Process**: Cloudflare automatically deploys to production
-- **No manual steps required**: Cloudflare Workers handles all deployment infrastructure
-- **Timeline**: Deployment completes within seconds of merge
+- **Build**: `pnpm build` writes the fully static site to `dist/`
+- **Prerequisite**: `packages/db/local.db` must exist (see setup above) and `DATABASE_URL` must be set
+- **Deploy**: upload `dist/` to any static host or CDN. No deployment pipeline is configured in this repository.
+
+### Mihon Worker
+
+- **Deploy**: `cd mihon && pnpm deploy` (Cloudflare Workers, D1 binding `bagabondo_db`)
 
 ### Development Deployment Flow
 
 1. **Development**: `pnpm dev` for local Astro development
-2. **Workers Testing**: `wrangler dev` for Cloudflare Workers runtime testing
-3. **Production**: Merge to `main` triggers automatic Cloudflare deployment
+2. **Worker Testing**: `cd mihon && pnpm dev` for the API Worker
+3. **Production**: build locally, then publish `dist/` with your static host
 
 ## Community & Support
 
