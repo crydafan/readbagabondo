@@ -1,14 +1,14 @@
 # AGENTS.md
 
-This document contains guidelines and commands for agentic coding agents working in the read-vagabond repository.
+This document contains guidelines and commands for agentic coding agents working in the readbagabondo repository.
 
 ## Project Overview
 
-This is a manga reader application built with Astro, serving Takehiko Inoue's Vagabond manga with a minimalist, high-quality reading experience. The reader is a **fully static site** (Astro SSG): all pages are pre-rendered at build time from a local SQLite database, and manga images are served from Bunny CDN.
+This is a manga reader application built with Astro, serving Takehiko Inoue's Vagabond manga with a minimalist, high-quality reading experience. The reader is a **fully static site** (Astro SSG): all pages are pre-rendered at build time from a local SQLite database, and manga images are served from a CDN (`https://pub.moleve.net/`).
 
 A separate Cloudflare Worker (`mihon/`) exposes a small read-only API consumed by the Mihon/Keiyoushi browser extension. This is the only part of the project still running on Cloudflare.
 
-> **Note:** This project was migrated off Cloudflare Workers/Pages (SSR, D1, R2). If you find references to D1, R2, the Cloudflare adapter, `Astro.locals.runtime`, or cache middleware in older docs or code, they are legacy and should not be reintroduced in the main app.
+> **Note:** This project was migrated off Cloudflare Workers/Pages (SSR, D1, R2). If you find references to D1, R2, the Cloudflare adapter, `Astro.locals.runtime`, or cache middleware in older docs or code, they are legacy and should not be reintroduced in the main app. (`manga/r2-upload.sh` is the exception: it is still used to move image buckets.)
 
 ## Build & Development Commands
 
@@ -26,26 +26,30 @@ pnpm astro <command>  # Run any Astro CLI command
 
 ### Database Commands
 
-The database layer is encapsulated in `@readbagabondo/db` (`packages/db/`). The reader reads from a local SQLite file (`packages/db/local.db`, committed to the repo) via Drizzle ORM. Schema is defined in `packages/db/src/schema.ts`, queries in `packages/db/src/queries.ts`, and the Drizzle client in `packages/db/src/client.ts`.
+The database layer is encapsulated in `@readbagabondo/db` (`packages/db/`). The reader reads from a local SQLite file (`packages/db/local.db`) via Drizzle ORM. Schema is defined in `packages/db/src/schema.ts`, queries in `packages/db/src/queries.ts`, and the Drizzle client in `packages/db/src/client.ts` (the package's `#client` import condition swaps in `client-workerd.ts` when bundled for the mihon Worker).
+
+`packages/db/local.db` is **not** committed — `packages/db/.gitignore` ignores `*.db`. The client throws if `DATABASE_URL` is unset, so copy the example env file and generate the database before running dev or build:
 
 ```bash
+cp .env.example .env
+
 # Generate a migration from schema changes (packages/db/src/schema.ts)
 pnpm db:generate
 
-# Apply migrations to local.db
+# Apply migrations to local.db (creates the file on first run)
 pnpm db:migrate
 
 # Inspect/browse the database
 pnpm db:studio
 ```
 
-Seeds live in `packages/db/seeds/` and are applied directly to the SQLite file:
+Seeds live in `packages/db/seeds/` and are applied directly to the SQLite file after migrations:
 
 ```bash
 sqlite3 packages/db/local.db < packages/db/seeds/0000_seed_vagabond_metadata.sql
 ```
 
-Because the static build reads `packages/db/local.db` at build time, the database file is committed so builds are reproducible. Regenerate/seed it locally if you change the schema or data, then commit the updated `packages/db/local.db`.
+The static build reads `packages/db/local.db` at build time, so a fresh clone must run `pnpm db:migrate` and then the seed command above before `pnpm dev` or `pnpm build`. Re-run both whenever the schema or seed data changes.
 
 ### Testing
 
@@ -60,7 +64,7 @@ No dedicated test framework is currently configured. Manual testing should be pe
 - **Framework**: Astro v6 with `output: "static"` (SSG)
 - **Database**: Local SQLite (`packages/db/local.db`) accessed at build time via `@readbagabondo/db` (Drizzle ORM + `@libsql/client`)
 - **Migrations**: drizzle-kit, output to `packages/db/drizzle/migrations/`
-- **Image CDN**: Bunny CDN (`https://vagabond.b-cdn.net/`)
+- **Image CDN**: `https://pub.moleve.net/` (see `src/lib/page.ts`)
 - **Styling**: Tailwind CSS v4 (via `@tailwindcss/vite`) with Flowbite components
 - **State**: nanostores (reader UI state)
 - **Mihon API**: separate Cloudflare Worker (`mihon/`) built with Hono, backed by D1
@@ -81,6 +85,7 @@ src/
 ├── layouts/                        # BaseLayout, MainLayout, ChapterLayout
 ├── components/                     # UI components (.astro)
 ├── feature/reader/store.ts         # nanostores reader state
+├── feature/reader/spreads.ts       # two-page spread pairing logic
 ├── lib/                            # Page URLs (page.ts), metadata
 ├── styles/                         # Global styles and Tailwind imports
 └── env.d.ts                        # Astro client type reference
@@ -89,19 +94,21 @@ packages/
 └── db/                             # @readbagabondo/db (schema, client, queries, drizzle config)
     ├── src/
     │   ├── schema.ts
-    │   ├── client.ts
+    │   ├── client.ts               # libsql client (Node/build)
+    │   ├── client-workerd.ts       # D1 client for the mihon Worker (`#client` condition)
     │   ├── queries.ts
+    │   ├── types.ts
     │   └── index.ts
     ├── drizzle/
     │   └── migrations/             # Generated SQL migrations
     ├── seeds/                      # SQL seed data for local.db
     ├── drizzle.config.ts
-    ├── local.db                    # Committed SQLite database for SSG build
+    ├── local.db                    # Generated SQLite database for SSG build (gitignored)
     ├── package.json
     └── tsconfig.json
 
 mihon/                              # Cloudflare Worker (Hono) for the extension API
-manga/                              # Image source + bunny-upload.sh (rclone -> Bunny CDN)
+manga/                              # Image source + upload scripts (bunny-upload.sh, r2-upload.sh)
 ```
 
 ### Imports
@@ -165,10 +172,10 @@ The reader uses nanostores for lightweight reactive client-side state.
 **Location**: `src/feature/reader/store.ts`
 
 ```typescript
-const currentPage = atom<number>(0); // Current page index
-const percentageRead = atom<number>(0); // Reading progress percentage
-const navbarVisibility = atom<boolean>(true); // UI navbar toggle
-const isProgrammaticScroll = atom<boolean>(false); // Scroll source flag
+const currentPage = atom(0); // Current page index
+const percentageRead = atom(0); // Reading progress percentage
+const navbarVisibility = atom<"visible" | "hidden">("visible"); // UI navbar toggle
+const isProgrammaticScroll = atom(false); // Scroll source flag
 ```
 
 Usage:
@@ -191,28 +198,34 @@ Usage:
 - `ArrowKeysHint.astro` — keyboard navigation hint
 - `ChapterList.astro` — list of chapters for a volume
 - `ChapterNavigation.astro` — chapter navigation controls
-- `CopyButton.astro` — copy-to-clipboard (used for crypto donation addresses)
+- `DirectionToggle.astro` — LTR/RTL reading direction switch (spread view only)
 - `Footer.astro` — page footer
 - `MetadataTags.astro` — SEO meta tags and structured data
 - `Navigation.astro` — main navigation bar
-- `PageViewer.astro` — cascade reader component (main reading interface)
+- `PageViewer.astro` — page viewer (cascade by default, paired spreads in two-page mode)
 - `ProgressBar.astro` — reading progress bar
 - `ThemeToggle.astro` — light/dark theme switch
+- `ViewToggle.astro` — single vs two-page (spread) view switch
 - `VolumeCard.astro` — volume preview card
 - `VolumeCover.astro` — volume cover image
 - `VolumeInformation.astro` — volume metadata display
 
 ## Image Delivery
 
-Manga images are served from **Bunny CDN**:
+Manga images are served from the CDN host `https://pub.moleve.net/`:
 
-- **Cover URL**: `https://vagabond.b-cdn.net/covers/volume-<n>.jpg`
-- **Page URL**: `https://vagabond.b-cdn.net/chapter-<chapter>/page-<page>.png`
+- **Cover URL**: `https://pub.moleve.net/covers/volume-<n>.jpg`
+- **Page URL**: `https://pub.moleve.net/chapter-<chapter>/page-<page>.png`
 - URL builders live in `src/lib/page.ts` (`buildVolumeCoverUrl`, `buildPageUrl`)
 
 ### Uploading images
 
-Source images live under `manga/chapter-*/`. They are synced to Bunny CDN with rclone via `manga/bunny-upload.sh` (configure a `bunny:` rclone remote). **No scans are committed to the repository.**
+Source images live under `manga/chapter-*/` (git-ignored) and are uploaded with the scripts in `manga/`:
+
+- `bunny-upload.sh` — `rclone copy` to a `bunny:` remote (configure it with `rclone config`)
+- `r2-upload.sh` — `aws s3 sync` to `s3://$BUCKET_NAME` on the EU R2 endpoint, reading `BUCKET_NAME`, `ACCOUNT_ID` and the AWS credentials from `manga/.env`; last used for the bucket jurisdiction change
+
+**No scans are committed to the repository.**
 
 ### Image Loading Strategy
 
@@ -243,17 +256,19 @@ A small read-only HTTP API consumed by the Mihon/Keiyoushi browser extension.
 
 - **Stack**: Cloudflare Worker + Hono, backed by D1 (`bagabondo-db`)
 - **Config**: `mihon/wrangler.jsonc` (binding `bagabondo_db`)
+- **Base path**: every route is mounted under `/api/mihon` with `trimTrailingSlash()`
 - **Routes** (`mihon/src/index.ts`):
-  - `GET /mangas`
-  - `GET /mangas/:mangaId`
-  - `GET /mangas/:mangaId/chapters`
-  - `GET /mangas/:mangaId/chapters/:chapterId`
-- **Commands** (run from `mihon/`):
+  - `GET /api/mihon/mangas` — accepts `?q=` (title filter) and `?page=` (20 per page)
+  - `GET /api/mihon/mangas/:mangaId`
+  - `GET /api/mihon/mangas/:mangaId/chapters`
+  - `GET /api/mihon/mangas/:mangaId/chapters/:chapterId`
+- **Commands** (run from `mihon/`, or with `pnpm --filter mihon <script>` from the repo root):
 
 ```bash
-pnpm wrangler dev                 # Local development
-pnpm wrangler deploy --minify     # Deploy
-pnpm wrangler types               # Regenerate CloudflareBindings types
+pnpm dev          # wrangler dev — local development
+pnpm build        # wrangler deploy --dry-run, validates the bundle
+pnpm deploy       # wrangler deploy --minify
+pnpm cf-typegen   # Regenerate CloudflareBindings types
 ```
 
 When changing the API contract, document breaking changes and notify external integration maintainers (Keiyoushi extension).
@@ -270,9 +285,9 @@ When changing the API contract, document breaking changes and notify external in
 ## Deployment Notes
 
 - **Reader**: `pnpm build` produces a static site in `dist/` that can be served from any static host or CDN. (Cloudflare Pages/Workers auto-deploy and the previous Docker/nginx setup have been removed; there is no in-repo CI deploy config on this branch.)
-- **Database**: regenerate/seed `local.db` locally and commit it; the static build reads it at build time
-- **Images**: sync to Bunny CDN via `manga/bunny-upload.sh`
-- **Mihon Worker**: deployed separately to Cloudflare with `pnpm wrangler deploy --minify` from `mihon/`
+- **Database**: `packages/db/local.db` is gitignored; run `pnpm db:migrate` and the seed script before building, and make sure `DATABASE_URL` is set (see `.env.example`)
+- **Images**: upload with `manga/bunny-upload.sh` (rclone → `bunny:`) or `manga/r2-upload.sh` (R2 bucket / jurisdiction moves)
+- **Mihon Worker**: deployed separately to Cloudflare with `pnpm deploy` from `mihon/`
 
 ## Development Workflow
 
@@ -305,6 +320,7 @@ This project uses trunk-based development with `main` as the primary branch:
 
 When changing the mihon API or database schema:
 
+- The mihon API is unversioned (`/api/mihon`); evolve it in place instead of adding a version segment
 - Document all breaking changes in the PR description
 - Provide a migration path where relevant
 - Notify external integration maintainers (Keiyoushi extension)
