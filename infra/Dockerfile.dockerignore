@@ -1,0 +1,11 @@
+.git
+.astro
+.pnpm-store
+node_modules
+**/node_modules
+dist
+manga
+.env
+.env.*
+**/*.db
+**/*.db-*
