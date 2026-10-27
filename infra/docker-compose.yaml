@@ -1,0 +1,18 @@
+services:
+  site:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: readbagabondo:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
